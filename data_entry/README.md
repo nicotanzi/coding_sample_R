@@ -1,2 +1,3 @@
-# Sample_Data_Entry
- Looks trought hundreds of excel files located in the economic ministery web, and extract the specific data points in order to construct a time series
+# A sample code of Data Entry in R
+ Argentinian fiscal data it is not as easy to get as I would like. The <a href="https://www.economia.gob.ar/onp/ejecucion/2021">economic ministery's web</a> allows you to download an Excel file with the Savings-Investment-Finincing account for a given month. I was particualry interested in the value of: amortizations, debt variations and financial results,	monthly from 2005 to 2019. It is clear, that doing this by hand would require a lot of time and patience.<br>
+	Fortunately, this code solves this problem. It goes to the given url, looks into the messy excel files and extracts the desired data.
