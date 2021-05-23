@@ -1,0 +1,150 @@
+---
+title: "data_entry_sample"
+author: "Nicolás Tanzi"
+date: "23 de mayo de 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# A sample code of Data Entry in R
+ Argentinian fiscal data it is not as easy to get as I would like. The <a href="https://www.economia.gob.ar/onp/ejecucion/2021">ministry of economy has a web page</a> that allows you to download an Excel file with the Savings-Investment-Finincing account for a given month. I was particualry interested in the value of: amortizations, debt variations and financial results,	monthly from 2005 to 2019. It is clear, that doing this by hand would require a lot of time and patience.<br>
+Fortunately, this code solves this problem. It goes to the given url, looks into the messy excel files and extracts the desired data.
+
+
+### Basic set up:
+```{r one, eval = FALSE}
+
+#############################################################
+#####    DATA ENTRY FROM MULTIPLE EXCEL FILES ONLNE     #####
+#####               AUTHOR: NICOLÁS TANZI               #####
+#############################################################
+
+
+####   PACKAGES & WORKING DIRECTORY   ####
+
+library(tseries) # Para laburar con las series de tiempo comunes
+library(rio) # Para cargar los archivos excel desde la web (entre otras funciones)
+library(stringr) # Para reemplazar NAs por strings
+
+dire <- dirname(rstudioapi::getSourceEditorContext()$path) # ¿Dónde está ubicado este script?
+```
+
+Next segment initialize some variables, and defines what is going to look for:
+```{r two, eval = FALSE}
+
+####   DEFINING WHAT WE WANT   ####
+
+# What?
+# Series que quiero crear (primero las creo como un escalar iguala 0 )
+rfin<-0.0
+deuda_p<-0.0
+deuda_d<-0.0
+amort_p<-0.0
+amort_d<-0.0
+
+# When?
+# Voy a buscar en los siguientes años y en los siguientes meses
+anos<-factor(c(2005:2019))
+meses_s<-c('ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic')
+meses_l<-c('enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre')
+
+# How?
+# Voy a buscar las palabras:
+rfin_str1 <- 'RESULTADO FINANCIERO \\('
+rfin_str2 <- 'RESULTADO FINANCIERO  \\('  # A partir de 2017 lo ponen con dos espacios -.-"
+deuda_p_str <- 'Endeudamiento en Moneda L'
+deuda_d_str <- 'Endeudamiento en Moneda E'
+amort_p_str <- 'n en Moneda L'
+amort_d_str <- 'n en Moneda E'
+
+# Where?
+url_inicio<-'https://www.economia.gob.ar/onp/documentos/resultado/caja/c'
+tipos<-c('.xls','.xlsx')
+```
+
+The main loop, iterates over every month of every year as it was previously defined.<br>
+We have to be careful because the excel files are not fully consistent, for example: most of them are '.xls' but few of them are '.xlsx'; the pattern of sheet names changes; the order of sheets could also change, etc.
+```{r three, eval = FALSE}
+####   GOING AFTER THE DATA   ####
+
+x<-0; errores<-''; for(ano in anos){
+  print(ano)
+  
+  for(nmes in 1:12){
+    x<-x+1
+    
+    mes_s<-meses_s[nmes]
+    mes_l<-meses_l[nmes]; print(mes_l)
+    
+    url<-''; i=1 # They don't use a constant way of naming the files, so...
+    for (mes in c(mes_s,mes_l)) { for (tipo in tipos){
+      url[i]<-paste0(url_inicio,ano,"/archivos/",mes,substr(ano,3,4),tipo)
+      i<-i+1 }}
+    
+    for (u in url){ # Try importing the data with this url
+      hoja <- try( rio::import(u,which=1)[-c(1:8),] , TRUE)
+      if(isTRUE(class(hoja)=="try-error")) {next} else break
+    }
+    
+    # Unfortunately, there is a missing file: September 2007
+    # And there are two damaged files: August 2008 and November 2009
+    # Fortunately, the code makes it easy to sport the problematic files
+    # And it is possible to build this files by hannd using the cummulative data
+    if (ano==2007 && nmes==9) { hoja <- rio::import('sep07.xls', which = 1)[-c(1:8),] }
+    if (ano==2008 && nmes==8) { hoja <- rio::import('ago08.xls', which = 1)[-c(1:8),]  }
+    if (ano==2009 && nmes==11) { hoja <- rio::import('nov09.xls', which = 1)[-c(1:8),]  }
+    # If there is a mistake I want to keep track of it
+    if(isTRUE(class(hoja)=="try-error")) {
+      error<-paste("No se encontró el excel para el mes de ",mes_l," en el año ",ano,".")
+      print(error)
+      errores[length(errores)+1]<-error
+    }
+    
+    # Some files in the inverse order (sheets do not follow a stable patern either)
+    # Easy solution:
+    if(ncol(hoja)!=10){hoja <- rio::import(u, which = 3)[-c(1:8),]}
+    if(ncol(hoja)!=10){ # If it is not enough I wanna know
+      error<-paste("Para el mes de",mes_l,"en el año",ano,"la hoja tiene",ncol(hoja),"columnas")
+      print(error)
+      errores[length(errores)+1]<-error
+    }
+    
+    
+    # Some data manipulation...
+    colnames(hoja)<-c('N','CONCEPTO','TESORO','RECURSOS','DESCENTRALIZADAS','SEGU_SOCIAL','PCIA','ASMIN','OTROS','TOTAL')
+    vacias<-which(rowSums(is.na(hoja))==ncol(hoja)) # ¿Qué filas están vacías?
+    hoja<-hoja[-vacias,] # Quito las filas vacías
+    hoja$CONCEPTO <- paste0(str_replace_na(hoja$N, replacement=""), hoja$CONCEPTO); hoja<-hoja[,-1]
+    hoja$TOTAL<-as.numeric(hoja$TOTAL)
+    conceptos <- t(as.matrix(hoja$CONCEPTO)) # Vector con los conceptos (no quiero data frame porque la función grepl opera con vectores)
+    
+    # Busco en la columna de conceptos la fila que coincida con la frase buscada
+    rfin_fila <- which(grepl(paste(rfin_str1,"|",rfin_str2,sep=""), conceptos))
+    deuda_p_fila <- which(grepl(deuda_p_str, conceptos))
+    deuda_d_fila <- which(grepl(deuda_d_str, conceptos))
+    amort_p_fila <- which(grepl(amort_p_str, conceptos))
+    amort_d_fila <- which(grepl(amort_d_str, conceptos))
+    
+    # Asigno el valor de la columna total a un vector
+    rfin[x]<-hoja$TOTAL[rfin_fila]
+    deuda_p[x]<-hoja$TOTAL[deuda_p_fila]
+    deuda_d[x]<-hoja$TOTAL[deuda_d_fila]
+    amort_p[x]<-hoja$TOTAL[amort_p_fila]
+    amort_d[x]<-hoja$TOTAL[amort_d_fila]
+    
+  }
+}; print(errores)
+```
+
+Finally, we transform those vector into time series
+```{r four, eval = FALSE}
+deficitn<- ts(-rfin,start=c(2005,1),frequency=12)
+deudadn<-ts(deuda_d-amort_d,start=c(2005,1),frequency=12)
+deudapn<-ts(deuda_p-amort_p,start=c(2005,1),frequency=12)
+
+```
+
+Very handy. It's syntax could be used in other contexts.
