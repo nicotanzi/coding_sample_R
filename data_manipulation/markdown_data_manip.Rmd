@@ -1,6 +1,33 @@
+---
+title: "Data Manipulation Sample"
+author: "Nicolás Tanzi"
+date: "23 de mayo de 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+I participated in a project for the CEDH (UdeSA), where we used the
+<a hreflang="https://mics.unicef.org/surveys">MISC survey of UNICEF</a>
+for Argentina. It provides a large dataset about households and
+individuals about a broad set of variables (related to education,
+economic status, health, belief, violence exposure, etc).
+The main goal of the project was to use this data to build
+a predictive model of some key variables, such as domestic violence,
+school dropout, teeneage pregnancy, etc.<br>
+Before the fun stuff, we have to transform the raw dataset into
+a more cmoprenhensive and operable dataset. This fragment of code
+shows how from a precise understanding of the survey, it could be possible
+to construct a the number of repeated years of every child.
+										
+### Set up
+```{r one, eval = FALSE}
+
 ##############################################################
 #####   DATA MANIPULATION: CLEANING, VAR GEN, GROUPING   #####
-#####                AUTHOR: NICOL�S TANZI               #####
+#####                AUTHOR: NICOLÁS TANZI               #####
 ##############################################################
 
 # Libraries ----
@@ -12,17 +39,24 @@ library(scales)
 library(haven)
 
 # Load data ----
-setwd(dirname(rstudioapi::getSourceEditorContext()$path)) # where the file is located
-hl <- read_sav("hl.sav")
-hl_dic <- labelled::lookfor(hl) 
+#setwd(dirname(rstudioapi::getSourceEditorContext()$path)) # where the file is located
+#hl <- read_sav("hl.sav")
+#hl_dic <- labelled::lookfor(hl) 
 
+```
+
+### Creating an id for each hosehold:
+```{r two, eval = FALSE}
 # IDHOGAR ----
 
 hl$HH1 <- sprintf("%04d", hl$HH1)
 hl$HH2 <- sprintf("%02d", hl$HH2)
 hl <- hl  %>%
   mutate(idhogar =  paste(HH1,HH2, sep="", collapse = NULL))
+```
 
+### Simple transformations of some variables:
+```{r three, eval = FALSE}
 ##########################
 ###      Formatting    ###
 ###    2, 1 => 0, 1    ###
@@ -43,24 +77,38 @@ hl <- hl  %>%
     
   )
 hl$HL4<-hl$HL4_t
+```
 
 
+### Generating new individual variables
+
+-Is this individual father or mother of some other member of the husehold?
+-Is this individual a kid?
+-(Is this individual an adult and has no son/daughter in this household?)
+
+```{r four, eval = FALSE}
 #####################################
 ###   New Individual Variables    ###
 #####################################
 
-# Es padre de algún niño del hogar
+# Es padre de algÃºn niÃ±o del hogar
 hl<-hl %>%
   group_by(idhogar) %>% 
   mutate(es_padre= as.numeric( (HL1 %in% HL12 | HL1 %in% HL14) ) )
 
-# Es niño 
+# Es niño/a 
 hl<-hl %>% mutate(ninio= as.numeric( HL6>4 & HL6<18 ))
 
 # Adulto que no es padre - otro_ad
 hl <- hl %>% 
   mutate( otro_ad = as.numeric(HL6>17)*(1-es_padre) )
 
+```
+
+### Education level
+It is possible to generate a variable that tells the year of schooling where the kid is at. Since different states have different education system one should be careful.
+
+```{r five, eval = FALSE}
 # Años de Educación
 hl <- hl %>%
   mutate( ED4B_t=replace_na(ED4B,0),
@@ -77,11 +125,11 @@ hl <- hl %>%
     ED4A==03 & ED4B_t > 8 ~ 0+ED4B_t, # si se pasa de 8, entonces poneme 9 (completa)
     ED4A==04 ~ 9, # EGB completa
     
-    # Secundario incompleto con primaria de 6 a�os
+    # Secundario incompleto con primaria de 6 años
     ED4A==05 & ED4B_t < 5 ~ 6+ED4B_t,
     ED4A==05 & ED4B_t > 4 ~ 12, # si se pasa de 5, entonces poneme 12 (completa)
     
-    # Secundario incompleto con primaria de 7 a�os
+    # Secundario incompleto con primaria de 7 años
     ED4A==06 & ED4B_t < 5 ~ 7+ED4B_t,
     ED4A==06 & ED4B_t > 4 ~ 12, # si se pasa de 4, entonces poneme 12 (completa)
     
@@ -104,14 +152,26 @@ hl <- hl %>%
     
   ))
 
+```
 
-##############################
-###   TO HOUSEHOLD LEVEL   ###
-##############################
 
+### From individual level to household level
+
+First I create a list that contains every household id (one household one observation)
+
+```{r six, eval = FALSE}
 hlid <- hl %>% select(idhogar) %>% unique()
+```
 
-# TIENE NI��OS EL HOGAR - ninios
+Then I group the individual variables. Above there are some simple examples.
+-Does this household have kids?
+-What is the proportion of men in the household?
+-What is the proportion of boys among the kids in the household?
+-What is the avrage age of the household members?
+-What is the avrage age of the kids in the household?
+```{r seven, eval = FALSE}
+
+# TIENE NIÃÑOS EL HOGAR - ninios
 A <- hl %>% group_by(idhogar) %>%
   summarise(ninios=any(HL6<18 & HL6>4)) %>% 
   mutate(ninios=as.numeric(ninios))
@@ -123,7 +183,7 @@ A <- hl %>% group_by(idhogar) %>%
   summarise(sexo=mean(HL4_t,na.rm=TRUE))
 hl_hh<-left_join(hl_hh,A)
 
-# Pctje de ni�os varones en el hogar sexo_ninios
+# Pctje de niños varones en el hogar sexo_ninios
 A <- hl %>% filter(ninio==1) %>% group_by(idhogar) %>%
   summarise(sexo_ninios=mean(HL4_t,na.rm=TRUE))
 A<-left_join(hlid,A) %>% mutate(sexo_ninios=replace_na(sexo_ninios,0.5))
@@ -134,88 +194,91 @@ A <- hl %>% group_by(idhogar) %>%
   summarise(edad=mean(HL6,na.rm=TRUE))
 A<-left_join(hlid,A) %>% mutate(edad=replace_na(edad,0))
 
-# Edad promedio de los niños del hogar - edad_ninios
+# Edad promedio de los niÃ±os del hogar - edad_ninios
 A <- hl %>% filter(ninio==1) %>% group_by(idhogar) %>%
   summarise(edad_ninios=mean(HL6,na.rm=TRUE))
 A<-left_join(hlid,A) %>% mutate(edad_ninios=replace_na(edad_ninios,0))
 hl_hh<-left_join(hl_hh,A)
 
+```
 
-# El/la jefe/a del hogar es p/madre de todos los niños del hogar - jefe_padre
+
+Above there are some examples that require to think a little more. Those lines try to summarize the parenthood realtionships of the household. The questions that answer are: 
+-Is the household's chief the father/mother of every kid in the household?
+-Is there at least one kid whose mom is not a member of the household?
+-Is there at least one kid whose dad is not a member of the household?
+-(Is there at least one kid whose parents are not members of the household?)
+-What is the avrage age of the kids in the household?
+
+```{r eight, eval = FALSE}
+# El/la jefe/a del hogar es p/madre de todos los niÃ±os del hogar - jefe_padre
 A <- hl %>% filter(ninio==1) %>% group_by(idhogar) %>%
   summarise(jefe_padre=all(HL3==03)) %>% 
   mutate(jefe_padre=as.numeric(jefe_padre))
 A<-left_join(hlid,A) %>% mutate(jefe_padre=replace_na(jefe_padre,0))
 hl_hh<-left_join(hl_hh,A)
 
-# Hay por lo menos un niño sin su mamá viviendo en el hogar - sinmama
+# Hay por lo menos un niÃ±o sin su mamÃ¡ viviendo en el hogar - sinmama
 A <- hl %>% group_by(idhogar) %>%
   summarise(sinmama=any(HL12==00,na.rm = TRUE)) %>% 
   mutate(sinmama=as.numeric(sinmama))
 hl_hh<-left_join(hl_hh,A)
 
-# Hay por lo menos un niño sin su papá viviendo en el hogar - sinpapa
+# Hay por lo menos un niÃ±o sin su papÃ¡ viviendo en el hogar - sinpapa
 A <- hl %>% group_by(idhogar) %>%
   summarise(sinpapa=any(HL14==00,na.rm = TRUE)) %>% 
   mutate(sinpapa=as.numeric(sinpapa))
 hl_hh<-left_join(hl_hh,A)
 
-# Hay por lo menos un niño que no tiene ningún padre viviendo en el hogar - sinpadres
+# Hay por lo menos un niÃ±o que no tiene ningÃºn padre viviendo en el hogar - sinpadres
 A <- hl %>% group_by(idhogar) %>%
   summarise(sinpadres=any(HL14==00 & HL12==00,na.rm = TRUE)) %>% 
   mutate(sinpadres=as.numeric(sinpadres))
 hl_hh<-left_join(hl_hh,A)
+```
 
-# Hay adultos que no son padres de los niños del hogar viviendo en el hogar - otros_ad
+
+This code fragment asks about other adults that are not mothers or fathers of any children in the household
+-Is there any?
+-How many?
+-How old are they?
+-Which is the men proportion of them?
+
+```{r nine, eval = FALSE}
+# Hay adultos que no son padres de los niÃ±os del hogar viviendo en el hogar - otros_ad
 A <- hl %>% group_by(idhogar) %>%
   summarise(otros_ad=any(otro_ad==1,na.rm = TRUE)) %>% 
   mutate(otros_ad=as.numeric(otros_ad))
 hl_hh<-left_join(hl_hh,A)
 
-# Cantidad de adultos que no son padres de los niños del hogar - cant_otros
+# Cantidad de adultos que no son padres de los niÃ±os del hogar - cant_otros
 A <- hl %>% group_by(idhogar) %>%
   summarise(cant_otros=sum(otro_ad,na.rm = TRUE))
 hl_hh<-left_join(hl_hh,A)
 
-# Edad promedio de los adultos que no son padres de los niños del hogar - edad_otros
+# Edad promedio de los adultos que no son padres de los niÃ±os del hogar - edad_otros
 A <- hl %>% filter(otro_ad==1) %>% group_by(idhogar) %>%
   summarise(edad_otros=mean(HL6,na.rm = TRUE))
 A<-left_join(hlid,A) %>% mutate(edad_otros=replace_na(edad_otros,0))
 hl_hh<-left_join(hl_hh,A)
 
-# Pctje de hombres en los adultos que no son padres de los niños del hogar - sexo_otros
+# Pctje de hombres en los adultos que no son padres de los niÃ±os del hogar - sexo_otros
 A <- hl %>% filter(otro_ad==1) %>% group_by(idhogar) %>%
   summarise(sexo_otros=mean(HL4_t,na.rm = TRUE))
 A<-left_join(hlid,A) %>% mutate(sexo_otros=replace_na(sexo_otros,0))
 hl_hh<-left_join(hl_hh,A)
 
-# Algun niño tiene diferente padre o madre que el resto - dif_padres
+```
+
+
+Looking at the individual answers for parents of each kid, we can know if there are kids whith differents fathers or mothers.
+```{r ten, eval = FALSE}
+# Algun niÃ±o tiene diferente padre o madre que el resto - dif_padres
 A <- hl %>% filter(ninio==1) %>% group_by(idhogar) %>%
   summarise(c_madres=n_distinct(HL12),c_padres=n_distinct(HL14)) %>% 
   mutate(dif_padres= as.numeric( c_madres>1 | c_padres>1 ) ) ; A<-A[,-c(2,3)]
 A<-left_join(hlid,A) %>% mutate(dif_padres=replace_na(dif_padres,0))
 hl_hh<-left_join(hl_hh,A)
+```
 
-# Algun miembro del hogar jamás asistió a la escuela - alg_no_edu
-A <- hl %>% group_by(idhogar) %>%
-  summarise(alg_no_edu=any(asistio==0 & asiste==0)) %>% 
-  mutate(alg_no_edu=as.numeric(alg_no_edu))
-hl_hh<-left_join(hl_hh,A)
-
-# Cuantos miembros del hogar jamás asistieron a la escuela - n_no_edu
-A <- hl %>% group_by(idhogar) %>%
-  summarise(n_no_edu=sum(asistio==0 & asiste==0))
-hl_hh<-left_join(hl_hh,A)
-
-# Cuantos niños del hogar jamás asistieron a la escuela - ninio_no_edu
-A <- hl %>% filter (ninio==1) %>% group_by(idhogar) %>%
-  summarise(ninio_no_edu=sum(asistio==0 & asiste==0))
-A<-left_join(hlid,A) %>% mutate(ninio_no_edu=replace_na(ninio_no_edu,0.5))
-hl_hh<-left_join(hl_hh,A)
-
-# Media de la edad menos los años estudiados de los niños - atraso
-A <- hl %>% filter(ninio==1) %>% mutate(atraso=HL6-edu-5) %>% 
-  group_by(idhogar) %>%
-  summarise(atraso=mean(atraso,na.rm=TRUE))
-A<-left_join(hlid,A) %>% mutate(atraso=replace_na(atraso,0))
-hl_hh<-left_join(hl_hh,A)
+The lines I've initially selected goes on, you can find that selection in my github repository as well as a subset of the true dataset (the subset has only the required varibles for that code to run).
